@@ -6,10 +6,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
 	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/stripe/stripe-go"
+	"github.com/stripe/stripe-go/charge"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,13 +30,19 @@ type Product struct {
 	Price    int    `json: "Price"`
 }
 
+type ChargeJSON struct {
+	Amount       int64  `json:"amount"`
+	ReceiptEmail string `json:"receiptEmail"`
+}
+
 var Database *sql.DB
 var newProduct Product
 var newUser User
+var productsArr = []Product{}
 var sampleSecretKey = []byte(os.Getenv("SECRET"))
 
 func main() {
-	conn, err := sql.Open("pgx", "host=localhost dbname=task_database user=tskDbUst password=7531 port=5432")
+	conn, err := sql.Open("pgx", "host=localhost dbname=tskDatabase user=tskUsr password=7531 port=5432")
 	Database = conn
 	CheckError(err)
 
@@ -49,7 +58,7 @@ func main() {
 	router.POST("/products", verifyJWT(addProductHandler))
 	router.PUT("/products/:id", verifyJWT(updateProductHandler))
 	router.DELETE("/products/:id", verifyJWT(deleteProductHandler))
-
+	router.POST("/api/charges/:id", HandlePayment)
 	router.POST("/users/signup", signUpHandler)
 	router.POST("/users/login", loginHandler)
 
@@ -134,8 +143,8 @@ func fetchRows(conn *sql.DB) error {
 	return nil
 }
 
-func listProductsHandler(context *gin.Context) {
-	var productsArr = []Product{}
+func getProductsFromDb() {
+
 	rows, err := Database.Query(`SELECT "id", "Name", "quantity", "price" FROM "products"`)
 	CheckError(err)
 	for rows.Next() {
@@ -151,8 +160,13 @@ func listProductsHandler(context *gin.Context) {
 
 	}
 	defer rows.Close()
-	context.IndentedJSON(http.StatusCreated, productsArr)
+}
 
+func listProductsHandler(context *gin.Context) {
+
+	getProductsFromDb()
+	context.IndentedJSON(http.StatusCreated, productsArr)
+	productsArr = nil
 }
 
 func signUpHandler(context *gin.Context) {
@@ -238,6 +252,59 @@ func HashPassword(password string) (string, error) {
 func CheckPasswordHash(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
+}
+
+func HandlePayment(context *gin.Context) {
+	var json ChargeJSON
+
+	context.BindJSON(&json)
+	//fmt.Println(int64(json.Amount))
+	stripe.Key = os.Getenv("SECRETKEY")
+	idPs := context.Param("id")
+	getProductsFromDb()
+
+	intVar, eRror := strconv.Atoi(idPs)
+	if eRror != nil {
+		fmt.Println(eRror)
+	}
+	for i, value := range productsArr {
+		if int64(json.Amount) < int64(value.Price) && intVar == value.Id {
+
+			context.String(http.StatusOK, "Amount is less than the price")
+
+			return
+		}
+		if intVar == value.Id && value.Quantity == 0 {
+			context.String(http.StatusOK, "Product out of Stock")
+			return
+		}
+		if i == len(productsArr)-1 && intVar != value.Id {
+			context.String(http.StatusOK, "Invalid Product Id")
+			return
+		}
+		if intVar == value.Id {
+			quantity := value.Quantity - 1
+			updateStmt := `update "products" set "Name"=$1, "quantity"=$2, "price"=$3 where "id"=$4`
+			_, e := Database.Exec(updateStmt, value.Name, quantity, value.Price, idPs)
+			CheckError(e)
+		}
+
+	}
+
+	productsArr = nil
+
+	_, err := charge.New(&stripe.ChargeParams{
+		Amount:       stripe.Int64(json.Amount * 100),
+		Currency:     stripe.String(string(stripe.CurrencyAUD)),
+		Source:       &stripe.SourceParams{Token: stripe.String("tok_visa")},
+		ReceiptEmail: stripe.String(json.ReceiptEmail)})
+	if err != nil {
+
+		context.String(http.StatusBadRequest, "Request failed")
+		return
+	}
+
+	context.String(http.StatusCreated, "Successfully charged")
 }
 
 func CheckError(err error) {
