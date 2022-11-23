@@ -30,9 +30,16 @@ POST /users/signup
 <b>Users passwords are hashed before being inserted into the database</b>
 
 ### Viewing Products
-All users are allowed to see the list of products stored in the database using
+All users are allowed to see the list of products stored in the database and to buy them using
 ```javascript
 GET /products
+```
+```javascript
+POST/api/charges/{id}
+{
+ "amount":900,
+ "receiptEmail":"XXXXX"
+}
 ```
 
 ### Managing Products
