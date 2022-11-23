@@ -37,8 +37,8 @@ GET /products
 ```javascript
 POST/api/charges/{id}
 {
- "amount":900,
- "receiptEmail":"XXXXX"
+  "amount": 200,
+  "receiptEmail": "XXXXX" 
 }
 ```
 
