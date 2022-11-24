@@ -45,25 +45,23 @@ func main() {
 	conn, err := sql.Open("pgx", "host=localhost dbname=tskDatabase user=tskUsr password=7531 port=5432")
 	Database = conn
 	CheckError(err)
-
 	err = conn.Ping()
+
 	if err != nil {
 		log.Fatal("Connection Error", err)
 	}
+
 	fmt.Println("Connected to postgres")
+
 	router := gin.Default()
 
 	router.GET("/products", listProductsHandler)
-
 	router.POST("/products", verifyJWT(addProductHandler))
 	router.PUT("/products/:id", verifyJWT(updateProductHandler))
 	router.DELETE("/products/:id", verifyJWT(deleteProductHandler))
 	router.POST("/api/charges/:id", HandlePayment)
 	router.POST("/users/signup", signUpHandler)
 	router.POST("/users/login", loginHandler)
-
-	err = fetchRows(conn)
-	CheckError(err)
 
 	router.Run("localhost:3000")
 
@@ -126,23 +124,6 @@ func verifyJWT(next func(gCon *gin.Context)) gin.HandlerFunc {
 	})
 }
 
-func fetchRows(conn *sql.DB) error {
-	rows, err := conn.Query(`SELECT "Name", "email", "isAdmin" FROM "users"`)
-	CheckError(err)
-	for rows.Next() {
-		var Name, email string
-		var isAdmin bool
-		err := rows.Scan(&Name, &email, &isAdmin)
-		if err != nil {
-			log.Println("err while scanning for row")
-		}
-		fmt.Printf("Name: %s email: %s isAdmin: %t\n", Name, email, isAdmin)
-	}
-
-	defer rows.Close()
-	return nil
-}
-
 func getProductsFromDb() {
 
 	rows, err := Database.Query(`SELECT "id", "Name", "quantity", "price" FROM "products"`)
@@ -188,6 +169,7 @@ func addProductHandler(context *gin.Context) {
 	CheckError(e)
 
 }
+
 func updateProductHandler(context *gin.Context) {
 	if err := context.BindJSON(&newProduct); err != nil {
 		return
@@ -198,6 +180,7 @@ func updateProductHandler(context *gin.Context) {
 	CheckError(e)
 
 }
+
 func deleteProductHandler(context *gin.Context) {
 	if err := context.BindJSON(&newProduct); err != nil {
 		return
@@ -208,6 +191,7 @@ func deleteProductHandler(context *gin.Context) {
 	_, e := Database.Exec(deleteStmt, idPd)
 	CheckError(e)
 }
+
 func loginHandler(context *gin.Context) {
 	var userResult = []User{}
 	if err := context.BindJSON(&newUser); err != nil {
@@ -256,13 +240,11 @@ func CheckPasswordHash(password, hash string) bool {
 
 func HandlePayment(context *gin.Context) {
 	var json ChargeJSON
-
 	context.BindJSON(&json)
-	//fmt.Println(int64(json.Amount))
+
 	stripe.Key = os.Getenv("SECRETKEY")
 	idPs := context.Param("id")
 	getProductsFromDb()
-
 	intVar, eRror := strconv.Atoi(idPs)
 	if eRror != nil {
 		fmt.Println(eRror)
